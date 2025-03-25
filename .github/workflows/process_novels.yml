@@ -33,14 +33,24 @@ jobs:
           NOVEL_DIR = "novel"
           OUTPUT_DIR = "output"
 
-          # Common encodings to try
-          COMMON_ENCODINGS = ['utf-8', 'gb18030', 'big5', 'gbk', 'gb2312', 'utf-16', 'iso-8859-1']
+          # Common encodings to try (in order of preference)
+          COMMON_ENCODINGS = [
+              'utf-8',
+              'gb18030',
+              'big5',
+              'gbk',
+              'gb2312',
+              'utf-16',
+              'iso-8859-1'
+          ]
 
           os.makedirs(OUTPUT_DIR, exist_ok=True)
 
           def detect_encoding(file_path):
               with open(file_path, 'rb') as f:
-                  return detect(f.read())['encoding']
+                  rawdata = f.read()
+                  result = detect(rawdata)
+                  return result['encoding']
 
           def read_file_with_fallback(file_path):
               encoding = detect_encoding(file_path)
@@ -48,22 +58,49 @@ jobs:
                   try:
                       with open(file_path, 'r', encoding=enc) as f:
                           return f.read()
-                  except:
+                  except UnicodeDecodeError:
                       continue
-              return "ERROR: Could not decode file"
+              raise ValueError(f"Could not decode file {file_path} with any encoding")
+
+          def chinese_to_arabic(chinese_num):
+              """Convert Chinese numbers to Arabic numerals"""
+              num_map = {
+                  '零':0, '一':1, '二':2, '三':3, '四':4,
+                  '五':5, '六':6, '七':7, '八':8, '九':9,
+                  '十':10, '百':100, '千':1000, '万':10000
+              }
+              
+              if chinese_num.isdigit():
+                  return int(chinese_num)
+                  
+              total = 0
+              current = 0
+              for char in chinese_num:
+                  if char in num_map:
+                      val = num_map[char]
+                      if val < 10:
+                          current = current * 10 + val
+                      else:
+                          current = max(current, 1)
+                          total += current * val
+                          current = 0
+              return total + current
 
           def parse_novel_content(content):
-              novel = {"metadata": {}, "chapters": []}
+              novel = {
+                  "metadata": {},
+                  "chapters": []
+              }
               
               # Extract metadata
-              metadata_pattern = r'''
-                  『(?P<name>.+?)/作者:(?P<author>.+?)』
-                  .*?
-                  『狀態:更新到:(?P<status>.+?)』
-                  .*?
-                  『內容簡介:(?P<intro>.+?)』
-              '''
-              meta_match = re.search(metadata_pattern, content, re.DOTALL | re.VERBOSE)
+              metadata_pattern = re.compile(
+                  r'『(?P<name>.+?)/作者:(?P<author>.+?)』.*?'
+                  r'『狀態:更新到:(?P<status>.+?)』.*?'
+                  r'『內容簡介:(?P<intro>.+?)』',
+                  re.DOTALL
+              )
+              
+              meta_match = metadata_pattern.search(content)
               if meta_match:
                   novel["metadata"] = {
                       "name": meta_match.group("name").strip(),
@@ -71,46 +108,39 @@ jobs:
                       "status": meta_match.group("status").strip(),
                       "introduction": meta_match.group("intro").strip()
                   }
-
-              # Extract chapters - improved pattern
+              
+              # Remove metadata to focus on chapters
+              content = content[meta_match.end():] if meta_match else content
               content = re.sub(r'^.*?------章節內容開始-------\n', '', content, flags=re.DOTALL)
               
-              # Handle both Arabic and Chinese numerals (第1章 and 第一章)
-              chapter_pattern = re.compile(r'''
-                  ^第([0-9零一二三四五六七八九十百千]+)章\s*  # Chapter number
-                  ([^\n]+)\n                  # Chapter title
-                  ((?:.(?!^第[0-9零一二三四五六七八九十百千]+章))+)  # Content until next chapter
-              ''', re.MULTILINE | re.VERBOSE)
-
-              chapters = []
-              pos = 0
-              while True:
-                  match = chapter_pattern.search(content, pos)
-                  if not match:
-                      break
-                  
+              # Improved chapter pattern that captures full content
+              chapter_pattern = re.compile(
+                  r'^第([0-9零一二三四五六七八九十百千万]+)章\s*([^\n]*)\n'  # Chapter header
+                  r'([\s\S]*?)'  # Content (non-greedy)
+                  r'(?=^第[0-9零一二三四五六七八九十百千万]+章|\Z)',  # Lookahead
+                  re.MULTILINE
+              )
+              
+              for match in chapter_pattern.finditer(content):
                   chapter_num = match.group(1)
                   chapter_title = match.group(2).strip()
                   chapter_content = match.group(3).strip()
                   
-                  # Clean content
-                  chapter_content = '\n'.join(
-                      line.strip() for line in chapter_content.split('\n') 
-                      if line.strip()
-                  )
+                  # Preserve original formatting while cleaning up
+                  chapter_content = re.sub(r'\r\n', '\n', chapter_content)  # Normalize line endings
+                  chapter_content = re.sub(r'\n{3,}', '\n\n', chapter_content)  # Reduce excessive newlines
                   
-                  chapters.append({
+                  novel["chapters"].append({
                       "chapter_number": chapter_num,
                       "chapter_title": chapter_title,
-                      "content": chapter_content
+                      "content": chapter_content  # Full content preserved
                   })
-                  
-                  pos = match.end()
               
-              novel["chapters"] = chapters
               return novel
 
           def save_novel_structure(novel_name, novel_data, output_base_dir):
+              """Save novel data in organized folder structure"""
+              # Create novel directory
               novel_dir = os.path.join(output_base_dir, novel_name)
               os.makedirs(novel_dir, exist_ok=True)
               
@@ -123,40 +153,21 @@ jobs:
               os.makedirs(chapters_dir, exist_ok=True)
               
               for chapter in novel_data["chapters"]:
-                  # Convert Chinese numbers to Arabic for filenames
                   try:
-                      chap_num = int(chapter["chapter_number"])
-                  except:
+                      # Convert chapter number to integer for consistent sorting
                       chap_num = chinese_to_arabic(chapter["chapter_number"])
+                      chapter_file = f"chapter_{chap_num:04d}.json"
+                  except:
+                      # Fallback for unexpected chapter numbers
+                      chapter_file = f"chapter_{chapter['chapter_number']}.json"
                   
-                  chapter_file = os.path.join(chapters_dir, f"chapter_{chap_num:04d}.json")
-                  with open(chapter_file, 'w', encoding='utf-8') as f:
+                  with open(os.path.join(chapters_dir, chapter_file), 'w', encoding='utf-8') as f:
                       json.dump(chapter, f, ensure_ascii=False, indent=4)
               
               return len(novel_data["chapters"])
 
-          def chinese_to_arabic(chinese_num):
-              # Simple Chinese number conversion
-              num_map = {
-                  '零':0, '一':1, '二':2, '三':3, '四':4,
-                  '五':5, '六':6, '七':7, '八':8, '九':9,
-                  '十':10, '百':100, '千':1000
-              }
-              result = 0
-              temp = 0
-              for c in chinese_num:
-                  if c in num_map:
-                      val = num_map[c]
-                      if val >= 10:
-                          if temp == 0:
-                              temp = 1
-                          result += temp * val
-                          temp = 0
-                      else:
-                          temp = temp * 10 + val
-              return result + temp
-
           def unzip_and_process(zip_path, output_base_dir):
+              """Process all novels in a zip file"""
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                   temp_dir = os.path.splitext(zip_path)[0]
                   zip_ref.extractall(temp_dir)
@@ -164,20 +175,35 @@ jobs:
                   results = {}
                   for root, _, files in os.walk(temp_dir):
                       for file in files:
+                          file_path = os.path.join(root, file)
                           if file.lower().endswith('.txt'):
-                              content = read_file_with_fallback(os.path.join(root, file))
-                              novel_data = parse_novel_content(content)
-                              novel_name = os.path.splitext(file)[0]
-                              chapter_count = save_novel_structure(novel_name, novel_data, output_base_dir)
-                              results[novel_name] = {
-                                  "metadata": f"{novel_name}/metadata.json",
-                                  "chapters": f"{novel_name}/chapters/ (count: {chapter_count})",
-                                  "first_chapter": novel_data["chapters"][0]["chapter_title"] if novel_data["chapters"] else None,
-                                  "last_chapter": novel_data["chapters"][-1]["chapter_title"] if novel_data["chapters"] else None
+                              try:
+                                  content = read_file_with_fallback(file_path)
+                                  novel_data = parse_novel_content(content)
+                                  novel_name = os.path.splitext(file)[0]
+                                  chapter_count = save_novel_structure(novel_name, novel_data, output_base_dir)
+                                  
+                                  results[file] = {
+                                      "status": "success",
+                                      "novel_name": novel_name,
+                                      "chapter_count": chapter_count,
+                                      "first_chapter": novel_data["chapters"][0]["chapter_title"] if novel_data["chapters"] else None,
+                                      "last_chapter": novel_data["chapters"][-1]["chapter_title"] if novel_data["chapters"] else None
+                                  }
+                              except Exception as e:
+                                  results[file] = {
+                                      "status": "error",
+                                      "error": str(e)
+                                  }
+                          else:
+                              results[file] = {
+                                  "status": "skipped",
+                                  "reason": "Not a text file"
                               }
-              return results
+                  return results
 
           def process_novel_folder():
+              """Main processing function"""
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
               summary = {}
               
@@ -188,18 +214,23 @@ jobs:
                   results = unzip_and_process(zip_path, OUTPUT_DIR)
                   summary[file] = results
                   
-                  # Print detailed processing info
+                  # Print processing summary
                   print(f"\nProcessing results for {file}:")
                   print("=" * 60)
-                  for novel, data in results.items():
-                      print(f"\nNovel: {novel}")
-                      print(f"- Metadata: {data['metadata']}")
-                      print(f"- Chapters: {data['chapters']}")
-                      print(f"- First chapter: {data['first_chapter']}")
-                      print(f"- Last chapter: {data['last_chapter']}")
+                  for filename, result in results.items():
+                      print(f"\nFile: {filename}")
+                      if result["status"] == "success":
+                          print(f"- Novel: {result['novel_name']}")
+                          print(f"- Chapters processed: {result['chapter_count']}")
+                          print(f"- First chapter: {result['first_chapter']}")
+                          print(f"- Last chapter: {result['last_chapter']}")
+                      else:
+                          print(f"- Status: {result['status']}")
+                          if "error" in result:
+                              print(f"- Error: {result['error']}")
                   print("=" * 60)
               
-              # Save summary
+              # Save complete summary
               with open(os.path.join(OUTPUT_DIR, "processing_summary.json"), 'w', encoding='utf-8') as f:
                   json.dump(summary, f, ensure_ascii=False, indent=4)
               
@@ -214,5 +245,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          git commit -m "Update novel files with improved chapter detection" || echo "No changes to commit"
+          git commit -m "Processed novels with full chapter content preservation" || echo "No changes to commit"
           git push
