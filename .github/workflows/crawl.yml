@@ -1,11 +1,18 @@
 name: Novel Crawler Debug
 
 on:
-  workflow_dispatch:  # Manual trigger only for debugging
+  workflow_dispatch:
+    inputs:
+      query:
+        description: 'Novel to search'
+        required: true
+        default: '斗破苍穹'
 
 jobs:
   debug:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
     steps:
     - uses: actions/checkout@v4
 
@@ -16,23 +23,28 @@ jobs:
 
     - name: Verify files
       run: |
+        echo "📁 Repository contents:"
         ls -la
-        echo "📄 File contents:"
-        head -n 20 piaotian_crawler.py
+        echo "📜 First lines of crawler:"
+        head -n 30 piaotian_crawler.py
 
     - name: Install dependencies
       run: |
-        pip install requests beautifulsoup4
-        pip install git+https://github.com/dipu-bd/lightnovel-crawler.git
+        sudo apt-get update
+        sudo apt-get install -y python3-dev python3-pip
+        pip install --upgrade pip wheel
+        pip install requests beautifulsoup4 urllib3
+        pip install git+https://github.com/dipu-bd/lightnovel-crawler.git@master
 
-    - name: Test script execution
+    - name: Run crawler with test query
       run: |
-        python -c "print('🟢 Python works!')"
-        python piaotian_crawler.py "test" || echo "❌ Script failed"
+        echo "🟢 Python path: $(which python)"
+        echo "🟢 Python version: $(python --version)"
+        python piaotian_crawler.py "${{ inputs.query }}" || echo "❌ Script failed with exit code $?"
 
-    - name: Force error for logs
+    - name: Show results
       if: always()
       run: |
-        echo "### Debug Info ###"
-        python --version
-        pip list
+        echo "📂 Result files:"
+        ls -la results/ || echo "No results directory"
+        cat results/*.json || echo "No result files"
