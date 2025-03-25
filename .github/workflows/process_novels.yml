@@ -26,7 +26,6 @@ jobs:
         run: |
           import os
           import zipfile
-          import json
           from chardet import detect
 
           NOVEL_DIR = "novel"
@@ -79,20 +78,20 @@ jobs:
               
               return f"ERROR: Could not decode file with any encoding"
 
-          def unzip_and_read(zip_path):
+          def unzip_and_save_txt(zip_path, output_dir):
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                   temp_dir = os.path.splitext(zip_path)[0]
                   zip_ref.extractall(temp_dir)
                   
-                  contents = {}
                   for root, _, files in os.walk(temp_dir):
                       for file in files:
                           file_path = os.path.join(root, file)
                           if file.lower().endswith('.txt'):
-                              contents[file] = read_file_with_fallback(file_path)
-                          else:
-                              contents[file] = "Non-text file (not processed)"
-                  return contents
+                              content = read_file_with_fallback(file_path)
+                              output_path = os.path.join(output_dir, file)
+                              with open(output_path, 'w', encoding='utf-8') as f:
+                                  f.write(content)
+                              print(f"Saved {file}")
 
           def process_novel_folder():
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
@@ -101,27 +100,15 @@ jobs:
                   zip_path = os.path.join(NOVEL_DIR, file)
                   print(f"\nProcessing {zip_path}...")
                   
-                  contents = unzip_and_read(zip_path)
+                  # Create a subdirectory for each zip's contents
+                  output_subdir = os.path.join(OUTPUT_DIR, os.path.splitext(file)[0])
+                  os.makedirs(output_subdir, exist_ok=True)
                   
-                  json_filename = os.path.splitext(file)[0] + ".json"
-                  output_path = os.path.join(OUTPUT_DIR, json_filename)
-                  with open(output_path, 'w', encoding='utf-8') as f:
-                      json.dump(contents, f, ensure_ascii=False, indent=4)
+                  unzip_and_save_txt(zip_path, output_subdir)
                   
-                  # Create a sample JSON with first 3 items
-                  sample_json = {}
-                  items_shown = 0
-                  for filename, content in contents.items():
-                      if items_shown >= 3:
-                          break
-                      sample_json[filename] = content if len(content) <= 100 else content[:100] + "..."
-                      items_shown += 1
-                  
-                  print(f"\nSample JSON structure from {json_filename}:")
-                  print("=" * 60)
-                  print(json.dumps(sample_json, ensure_ascii=False, indent=2))
-                  print("=" * 60)
-                  print(f"✅ Saved {json_filename} (total items: {len(contents)})")
+                  # Count the number of txt files processed
+                  txt_files = [f for f in os.listdir(output_subdir) if f.endswith(".txt")]
+                  print(f"✅ Processed {len(txt_files)} text files")
 
           process_novel_folder()
         shell: python
@@ -132,5 +119,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          git commit -m "Update individual JSON files" || echo "No changes to commit"
+          git commit -m "Update processed text files" || echo "No changes to commit"
           git push
