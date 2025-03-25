@@ -1,10 +1,10 @@
-name: Process Novel ZIPs to JSON
+name: Process Novel Folder
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main  # Trigger on pushes to the main branch
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   process-novel:
@@ -14,54 +14,73 @@ jobs:
       # Step 1: Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Required to push changes back
 
       # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.9'  # Specify the Python version
 
-      # Step 3: Run the Python script (no united.json)
-      - name: Convert ZIPs to JSON
+      # Step 3: Install dependencies (if any)
+      - name: Install dependencies
         run: |
-          python - <<EOF
+          python -m pip install --upgrade pip
+
+      # Step 4: Process zip files and generate united.json
+      - name: Process novel folder
+        run: |
+          import os
           import zipfile
           import json
-          from pathlib import Path
 
           NOVEL_DIR = "novel"
           OUTPUT_DIR = "output"
 
-          def unzip_and_read(zip_path: Path) -> dict[str, str]:
-              """Read ZIP contents without extracting files."""
-              contents = {}
+          # Ensure the output directory exists
+          os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+          def unzip_and_read(zip_path):
+              """Unzip a file and read its contents."""
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                  for file in zip_ref.namelist():
-                      if not file.endswith('/'):
-                          with zip_ref.open(file) as f:
-                              contents[Path(file).name] = f.read().decode('utf-8')
-              return contents
+                  temp_dir = os.path.splitext(zip_path)[0]
+                  zip_ref.extractall(temp_dir)
+                  
+                  contents = {}
+                  for root, _, files in os.walk(temp_dir):
+                      for file in files:
+                          file_path = os.path.join(root, file)
+                          with open(file_path, 'r', encoding='utf-8') as f:
+                              contents[file] = f.read()
+                  
+                  return contents
 
-          # Create output directory
-          Path(OUTPUT_DIR).mkdir(exist_ok=True)
+          def process_novel_folder():
+              combined_data = {}
 
-          # Process each ZIP file
-          for zip_path in Path(NOVEL_DIR).glob("*.zip"):
-              print(f"Processing {zip_path.name}...")
-              json_path = Path(OUTPUT_DIR) / f"{zip_path.stem}.json"
-              with open(json_path, 'w', encoding='utf-8') as f:
-                  json.dump(unzip_and_read(zip_path), f, ensure_ascii=False, indent=4)
-              print(f"Saved {json_path.name}")
-          EOF
+              for file in os.listdir(NOVEL_DIR):
+                  if file.endswith(".zip"):
+                      zip_path = os.path.join(NOVEL_DIR, file)
+                      print(f"Processing {zip_path}...")
+                      
+                      contents = unzip_and_read(zip_path)
+                      combined_data[file] = contents
 
-      # Step 4: Commit and push changes
-      - name: Commit JSON files
-        if: github.ref == 'refs/heads/main'
+              output_json_path = os.path.join(OUTPUT_DIR, "united.json")
+              with open(output_json_path, 'w', encoding='utf-8') as f:
+                  json.dump(combined_data, f, ensure_ascii=False, indent=4)
+              
+              print(f"Combined JSON saved to {output_json_path}")
+
+          process_novel_folder()
+
+        shell: python
+
+      # Step 5: Commit and push the output folder back to the repository
+      - name: Commit and push changes
+        if: github.ref == 'refs/heads/main'  # Only commit if on the main branch
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-generated JSON files from ZIPs"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/united.json
+          git commit -m "Update united.json with latest data" || echo "No changes to commit"
           git push
