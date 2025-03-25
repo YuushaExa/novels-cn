@@ -3,39 +3,41 @@ name: Process Novel Folder
 on:
   push:
     branches:
-      - main  # Trigger on pushes to the main branch
-  workflow_dispatch:  # Allow manual triggering
+      - main
+  workflow_dispatch:
 
 jobs:
   process-novel:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'  # Specify the Python version
+          python-version: '3.9'
 
-      # Step 4: Process zip files and generate individual JSON files
       - name: Process novel folder
         run: |
           import os
           import zipfile
           import json
+          from chardet import detect
 
           NOVEL_DIR = "novel"
           OUTPUT_DIR = "output"
 
-          # Ensure the output directory exists
           os.makedirs(OUTPUT_DIR, exist_ok=True)
 
+          def detect_encoding(file_path):
+              with open(file_path, 'rb') as f:
+                  rawdata = f.read(1024)  # Read first 1KB to guess encoding
+              result = detect(rawdata)
+              return result['encoding']
+
           def unzip_and_read(zip_path):
-              """Unzip a file and read its contents."""
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                   temp_dir = os.path.splitext(zip_path)[0]
                   zip_ref.extractall(temp_dir)
@@ -44,16 +46,25 @@ jobs:
                   for root, _, files in os.walk(temp_dir):
                       for file in files:
                           file_path = os.path.join(root, file)
-                          with open(file_path, 'r', encoding='utf-8') as f:
-                              contents[file] = f.read()
-                  
+                          try:
+                              # First try UTF-8
+                              with open(file_path, 'r', encoding='utf-8') as f:
+                                  contents[file] = f.read()
+                          except UnicodeDecodeError:
+                              try:
+                                  # Try detected encoding
+                                  encoding = detect_encoding(file_path)
+                                  with open(file_path, 'r', encoding=encoding) as f:
+                                      contents[file] = f.read()
+                              except Exception as e:
+                                  print(f"Failed to read {file_path}: {str(e)}")
+                                  contents[file] = f"ERROR: Could not decode file - {str(e)}"
                   return contents
 
           def process_novel_folder():
               combined_data = {}
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
                             
-              # Process all files
               for file in zip_files:
                   zip_path = os.path.join(NOVEL_DIR, file)
                   print(f"\nProcessing {zip_path}...")
@@ -61,14 +72,12 @@ jobs:
                   contents = unzip_and_read(zip_path)
                   combined_data[file] = contents
                   
-                  # Save individual JSON file
                   json_filename = os.path.splitext(file)[0] + ".json"
                   output_path = os.path.join(OUTPUT_DIR, json_filename)
                   with open(output_path, 'w', encoding='utf-8') as f:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
                   print(f"Saved {json_filename}")
 
-              # Save combined JSON
               output_json_path = os.path.join(OUTPUT_DIR, "united.json")
               with open(output_json_path, 'w', encoding='utf-8') as f:
                   json.dump(combined_data, f, ensure_ascii=False, indent=4)
@@ -78,9 +87,8 @@ jobs:
           process_novel_folder()
         shell: python
 
-      # Step 5: Commit and push the output folder back to the repository
       - name: Commit and push changes
-        if: github.ref == 'refs/heads/main'  # Only commit if on the main branch
+        if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
