@@ -1,10 +1,10 @@
-name: Process Novel ZIPs and Generate JSON
+name: Process Novel Folder
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main  # Trigger on pushes to the main branch
+  workflow_dispatch:  # Allow manual triggering
 
 jobs:
   process-novel:
@@ -14,73 +14,76 @@ jobs:
       # Step 1: Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v3
-        with:
-          fetch-depth: 0  # Required to push changes back
 
       # Step 2: Set up Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.9'
+          python-version: '3.9'  # Specify the Python version
 
-      # Step 3: Install dependencies (if any)
-      - name: Install dependencies
-        run: pip install pathlib
-
-      # Step 4: Run the Python script
-      - name: Process ZIP files
+      # Step 4: Process zip files and generate individual JSON files
+      - name: Process novel folder
         run: |
-          python - <<EOF
           import os
           import zipfile
           import json
-          from pathlib import Path
 
           NOVEL_DIR = "novel"
           OUTPUT_DIR = "output"
 
-          def unzip_and_read(zip_path: Path) -> dict[str, str]:
-              """Unzip a file and read its contents into a dictionary."""
-              contents = {}
+          # Ensure the output directory exists
+          os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+          def unzip_and_read(zip_path):
+              """Unzip a file and read its contents."""
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                  for file in zip_ref.namelist():
-                      if not file.endswith('/'):
-                          with zip_ref.open(file) as f:
-                              contents[Path(file).name] = f.read().decode('utf-8')
-              return contents
+                  temp_dir = os.path.splitext(zip_path)[0]
+                  zip_ref.extractall(temp_dir)
+                  
+                  contents = {}
+                  for root, _, files in os.walk(temp_dir):
+                      for file in files:
+                          file_path = os.path.join(root, file)
+                          with open(file_path, 'r', encoding='utf-8') as f:
+                              contents[file] = f.read()
+                  
+                  return contents
 
           def process_novel_folder():
-              """Process all ZIP files in NOVEL_DIR and save JSON outputs."""
-              Path(OUTPUT_DIR).mkdir(exist_ok=True)
-              zip_files = list(Path(NOVEL_DIR).glob("*.zip"))
               combined_data = {}
-
-              for zip_path in zip_files:
-                  print(f"\nProcessing {zip_path.name}...")
+              zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
+                            
+              # Process all files
+              for file in zip_files:
+                  zip_path = os.path.join(NOVEL_DIR, file)
+                  print(f"\nProcessing {zip_path}...")
+                  
                   contents = unzip_and_read(zip_path)
-                  combined_data[zip_path.name] = contents
-
-                  json_filename = zip_path.stem + ".json"
-                  output_path = Path(OUTPUT_DIR) / json_filename
+                  combined_data[file] = contents
+                  
+                  # Save individual JSON file
+                  json_filename = os.path.splitext(file)[0] + ".json"
+                  output_path = os.path.join(OUTPUT_DIR, json_filename)
                   with open(output_path, 'w', encoding='utf-8') as f:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
                   print(f"Saved {json_filename}")
 
-              output_json_path = Path(OUTPUT_DIR) / "united.json"
+              # Save combined JSON
+              output_json_path = os.path.join(OUTPUT_DIR, "united.json")
               with open(output_json_path, 'w', encoding='utf-8') as f:
                   json.dump(combined_data, f, ensure_ascii=False, indent=4)
+              
               print(f"\nCombined JSON saved to {output_json_path}")
 
-          if __name__ == "__main__":
-              process_novel_folder()
-          EOF
+          process_novel_folder()
+        shell: python
 
-      # Step 5: Commit and push changes
-      - name: Commit and push JSON outputs
-        if: github.ref == 'refs/heads/main'
+      # Step 5: Commit and push the output folder back to the repository
+      - name: Commit and push changes
+        if: github.ref == 'refs/heads/main'  # Only commit if on the main branch
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-generated JSON files from ZIPs"
+          git commit -m "Update JSON files with latest data" || echo "No changes to commit"
           git push
