@@ -1,152 +1,57 @@
-# -*- coding: utf-8 -*-
-import json
 import os
-import re
-import time
-import logging
-from lncrawl.core.crawler import Crawler
-import urllib.parse
+import zipfile
+import json
+from pathlib import Path
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-def sanitize_filename(filename):
-    """Remove invalid characters from filename"""
-    return re.sub(r'[\\/*?:"<>|]', "", filename).strip()
-
-class PiaoTianCrawler(Crawler):
-    base_url = [
-        "https://www.piaotian.com",
-        "https://www.ptwxz.com",
-        "https://www.piaotia.com",
-    ]
+def process_novels():
+    # Create output directory if it doesn't exist
+    output_dir = Path("output")
+    output_dir.mkdir(exist_ok=True)
     
-    headers = {
-        "Cache-Control": "no-cache",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Origin": "https://www.piaotia.com",
-        "Referer": "https://www.piaotia.com/modules/article/search.php",
-    }
-
-    def __init__(self):
-        super().__init__()
-        self.home_url = self.base_url[2]  # Default to piaotia.com
-
-    def search_novel(self, query):
-        encoded_query = urllib.parse.quote(query.encode("gbk"))
-        search = urllib.parse.quote(" 搜 索 ".encode("gbk"))
-        data = f"searchtype=articlename&searchkey={encoded_query}&Submit={search}"
-        
-        self.headers["Origin"] = self.home_url
-        self.headers["Referer"] = f"{self.home_url}/modules/article/search.php"
-
-        logger.info(f"Searching for: {query}")
-        response = self.post_response(
-            f"{self.home_url}/modules/article/search.php",
-            headers=self.headers,
-            data=data,
-        )
-        soup = self.make_soup(response, "gbk")
-
-        results = []
-        if response.url.startswith(f"{self.home_url}/bookinfo/"):
-            # Single result case
-            title = soup.select_one("div#content table table table h1").text.strip()
-            author = soup.select('div#content table tr td[width]')[2].text
-            author = author.replace(u'\xa0', "").replace("作 者：", "").strip()
-            results.append({
-                "title": title,
-                "url": response.url,
-                "author": author,
-                "source": self.home_url
-            })
-        else:
-            # Multiple results case
-            for row in soup.select("div#content table tr")[1:]:
-                cells = row.select("td")
-                if len(cells) >= 3:
-                    results.append({
-                        "title": cells[0].text.strip(),
-                        "url": cells[0].select_one("a")["href"],
-                        "author": cells[2].text.strip(),
-                        "source": self.home_url
-                    })
-        return results
-
-    def get_novel_details(self, url):
-        """Get full novel details including chapters"""
-        self.novel_url = url
-        self.read_novel_info()
-        
-        return {
-            "title": self.novel_title,
-            "author": self.novel_author,
-            "cover": self.novel_cover,
-            "chapter_count": len(self.chapters),
-            "chapters": [{
-                "id": chap["id"],
-                "title": chap["title"],
-                "url": chap["url"]
-            } for chap in self.chapters[:10]]  # First 10 chapters only
-        }
-
-def save_results(query, data, folder="results"):
-    """Save data to JSON file with query-based filename"""
-    os.makedirs(folder, exist_ok=True)
-    safe_name = sanitize_filename(query)
-    filename = f"{folder}/{safe_name}.json"
+    combined_data = []
     
-    with open(filename, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    
-    logger.info(f"Saved results to {filename}")
-    return filename
-
-def main():
-    import sys
-    queries = ["斗破苍穹", "凡人修仙传"]  # Default queries
-    
-    # Use command-line arguments if provided
-    if len(sys.argv) > 1:
-        queries = sys.argv[1:]
-    
-    crawler = PiaoTianCrawler()
-    
-    for query in queries:
+    # Process each ZIP file in the novel directory
+    novel_dir = Path("novel")
+    for zip_file in novel_dir.glob("*.zip"):
         try:
-            logger.info(f"Processing query: {query}")
+            # Create a temporary directory for extraction
+            temp_dir = Path(f"temp_{zip_file.stem}")
+            temp_dir.mkdir(exist_ok=True)
             
-            # 1. Perform search
-            results = crawler.search_novel(query)
-            if not results:
-                logger.warning(f"No results found for: {query}")
-                continue
-                
-            # 2. Save search results
-            search_results_file = save_results(
-                f"{query}_search_results",
-                {"query": query, "results": results}
-            )
+            # Extract the ZIP file
+            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                zip_ref.extractall(temp_dir)
             
-            # 3. Get details for first result
-            first_result = results[0]
-            details = crawler.get_novel_details(first_result["url"])
-            details_file = save_results(
-                f"{query}_{sanitize_filename(first_result['title'])}_details",
-                details
-            )
+            # Process each chapter file in the extracted directory
+            for chapter_file in temp_dir.glob("*"):
+                if chapter_file.is_file():
+                    # Use chapter filename as title (without extension)
+                    title = chapter_file.stem
+                    
+                    # Read chapter content
+                    with open(chapter_file, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Add to combined data
+                    combined_data.append({
+                        "title": title,
+                        "content": content
+                    })
             
-            # 4. Add delay between requests
-            time.sleep(5)
+            # Clean up temporary directory
+            for file in temp_dir.glob("*"):
+                file.unlink()
+            temp_dir.rmdir()
             
         except Exception as e:
-            logger.error(f"Failed to process {query}: {str(e)}")
-            continue
+            print(f"Error processing {zip_file}: {str(e)}")
+    
+    # Save combined data to JSON (overwrite if exists)
+    combined_path = output_dir / "combined.json"
+    with open(combined_path, 'w', encoding='utf-8') as f:
+        json.dump(combined_data, f, ensure_ascii=False, indent=2)
+    
+    print(f"Processed {len(combined_data)} chapters into {combined_path}")
 
 if __name__ == "__main__":
-    print("🟢 Script started successfully!")
-    main()
+    process_novels()
