@@ -148,4 +148,5 @@ def main():
             continue
 
 if __name__ == "__main__":
+    print("🟢 Script started successfully!")
     main()
