@@ -88,27 +88,37 @@ jobs:
               }
               
               # Extract metadata
-              name_author_match = re.search(r'(.+?)/作者:(.+)', content)
+              name_author_match = re.search(r'『(.+?)/作者:(.+?)』', content)
               if name_author_match:
                   novel["metadata"]["name"] = name_author_match.group(1).strip()
                   novel["metadata"]["author"] = name_author_match.group(2).strip()
               
-              intro_match = re.search(r'內容簡介:(.+?)------章節內容開始-------', content, re.DOTALL)
+              status_match = re.search(r'『狀態:更新到:(.+?)』', content)
+              if status_match:
+                  novel["metadata"]["status"] = status_match.group(1).strip()
+              
+              intro_match = re.search(r'『內容簡介:(.+?)』', content, re.DOTALL)
               if intro_match:
                   novel["metadata"]["introduction"] = intro_match.group(1).strip()
               
-              # Extract chapters
-              chapter_pattern = re.compile(r'第(\d+)章\s*(.+?)\n(.+?)(?=\n第\d+章|\Z)', re.DOTALL)
+              # Remove all metadata and footer before chapter content
+              content = re.sub(r'^.*?------章節內容開始-------\n', '', content, flags=re.DOTALL)
+              
+              # Extract chapters - improved pattern to handle full chapter content
+              chapter_pattern = re.compile(r'^(第\d+章[^\n]+)\n([\s\S]+?)(?=^第\d+章|\Z)', re.MULTILINE)
               chapters = chapter_pattern.findall(content)
               
               for chapter in chapters:
-                  chapter_num = chapter[0].strip()
-                  chapter_title = chapter[1].strip()
-                  chapter_content = chapter[2].strip()
+                  chapter_title = chapter[0].strip()
+                  chapter_num = re.search(r'第(\d+)章', chapter_title).group(1)
+                  chapter_content = chapter[1].strip()
+                  
+                  # Clean up chapter content (remove extra spaces and empty lines)
+                  chapter_content = '\n'.join([line.strip() for line in chapter_content.split('\n') if line.strip()])
                   
                   novel["chapters"].append({
                       "chapter_number": chapter_num,
-                      "chapter_title": chapter_title,
+                      "chapter_title": chapter_title.replace(f'第{chapter_num}章', '').strip(),
                       "content": chapter_content
                   })
               
