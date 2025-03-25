@@ -1,48 +1,38 @@
-name: PiaoTian Novel Crawler
+name: Novel Crawler Debug
 
 on:
-  workflow_dispatch:
-    inputs:
-      queries:
-        description: 'Comma-separated novel names to search'
-        required: false
-        default: '斗破苍穹,凡人修仙传'
+  workflow_dispatch:  # Manual trigger only for debugging
 
 jobs:
-  crawl:
+  debug:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      
+    - uses: actions/checkout@v4
+
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        
+
+    - name: Verify files
+      run: |
+        ls -la
+        echo "📄 File contents:"
+        head -n 20 piaotian_crawler.py
+
     - name: Install dependencies
       run: |
-        pip install requests beautifulsoup4 lncrawl
-        git clone https://github.com/dipu-bd/lightnovel-crawler.git
-        cd lightnovel-crawler && pip install -e .
-        
-    - name: Run crawler with custom queries
+        pip install requests beautifulsoup4
+        pip install git+https://github.com/dipu-bd/lightnovel-crawler.git
+
+    - name: Test script execution
       run: |
-        IFS=',' read -ra QUERIES <<< "${{ github.event.inputs.queries || '斗破苍穹,凡人修仙传' }}"
-        python piaotian_crawler.py "${QUERIES[@]}"
-      
-    - name: Commit and push results
+        python -c "print('🟢 Python works!')"
+        python piaotian_crawler.py "test" || echo "❌ Script failed"
+
+    - name: Force error for logs
+      if: always()
       run: |
-        git config --global user.name "GitHub Actions"
-        git config --global user.email "actions@github.com"
-        git add results/
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update novel data [skip ci]" && git push)
-        
-    - name: Upload results as artifact
-      uses: actions/upload-artifact@v3
-      with:
-        name: novel-data
-        path: results/
-        retention-days: 5
+        echo "### Debug Info ###"
+        python --version
+        pip list
