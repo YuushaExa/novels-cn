@@ -26,6 +26,8 @@ jobs:
         run: |
           import os
           import zipfile
+          import json
+          import re
           from chardet import detect
 
           NOVEL_DIR = "novel"
@@ -78,20 +80,56 @@ jobs:
               
               return f"ERROR: Could not decode file with any encoding"
 
-          def unzip_and_save_txt(zip_path, output_dir):
+          def parse_novel_content(content):
+              # Initialize the novel structure
+              novel = {
+                  "metadata": {},
+                  "chapters": []
+              }
+              
+              # Extract metadata
+              name_author_match = re.search(r'(.+?)/作者:(.+)', content)
+              if name_author_match:
+                  novel["metadata"]["name"] = name_author_match.group(1).strip()
+                  novel["metadata"]["author"] = name_author_match.group(2).strip()
+              
+              intro_match = re.search(r'內容簡介:(.+?)------章節內容開始-------', content, re.DOTALL)
+              if intro_match:
+                  novel["metadata"]["introduction"] = intro_match.group(1).strip()
+              
+              # Extract chapters
+              chapter_pattern = re.compile(r'第(\d+)章\s*(.+?)\n(.+?)(?=\n第\d+章|\Z)', re.DOTALL)
+              chapters = chapter_pattern.findall(content)
+              
+              for chapter in chapters:
+                  chapter_num = chapter[0].strip()
+                  chapter_title = chapter[1].strip()
+                  chapter_content = chapter[2].strip()
+                  
+                  novel["chapters"].append({
+                      "chapter_number": chapter_num,
+                      "chapter_title": chapter_title,
+                      "content": chapter_content
+                  })
+              
+              return novel
+
+          def unzip_and_process(zip_path):
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                   temp_dir = os.path.splitext(zip_path)[0]
                   zip_ref.extractall(temp_dir)
                   
+                  novels = {}
                   for root, _, files in os.walk(temp_dir):
                       for file in files:
                           file_path = os.path.join(root, file)
                           if file.lower().endswith('.txt'):
                               content = read_file_with_fallback(file_path)
-                              output_path = os.path.join(output_dir, file)
-                              with open(output_path, 'w', encoding='utf-8') as f:
-                                  f.write(content)
-                              print(f"Saved {file}")
+                              novel_data = parse_novel_content(content)
+                              novels[file] = novel_data
+                          else:
+                              novels[file] = "Non-text file (not processed)"
+                  return novels
 
           def process_novel_folder():
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
@@ -100,15 +138,33 @@ jobs:
                   zip_path = os.path.join(NOVEL_DIR, file)
                   print(f"\nProcessing {zip_path}...")
                   
-                  # Create a subdirectory for each zip's contents
-                  output_subdir = os.path.join(OUTPUT_DIR, os.path.splitext(file)[0])
-                  os.makedirs(output_subdir, exist_ok=True)
+                  novels = unzip_and_process(zip_path)
                   
-                  unzip_and_save_txt(zip_path, output_subdir)
+                  json_filename = os.path.splitext(file)[0] + ".json"
+                  output_path = os.path.join(OUTPUT_DIR, json_filename)
+                  with open(output_path, 'w', encoding='utf-8') as f:
+                      json.dump(novels, f, ensure_ascii=False, indent=4)
                   
-                  # Count the number of txt files processed
-                  txt_files = [f for f in os.listdir(output_subdir) if f.endswith(".txt")]
-                  print(f"✅ Processed {len(txt_files)} text files")
+                  # Create a sample JSON with first item and first chapter
+                  sample_json = {}
+                  for filename, novel_data in novels.items():
+                      if isinstance(novel_data, dict):
+                          sample_novel = {
+                              "metadata": novel_data["metadata"],
+                              "chapters": novel_data["chapters"][:1] if novel_data["chapters"] else []
+                          }
+                          sample_json[filename] = sample_novel
+                      else:
+                          sample_json[filename] = novel_data
+                      break
+                  
+                  print(f"\nSample JSON structure from {json_filename}:")
+                  print("=" * 60)
+                  print(json.dumps(sample_json, ensure_ascii=False, indent=2))
+                  print("=" * 60)
+                  
+                  total_chapters = sum(len(novel["chapters"]) for novel in novels.values() if isinstance(novel, dict))
+                  print(f"✅ Saved {json_filename} (total chapters: {total_chapters})")
 
           process_novel_folder()
         shell: python
@@ -119,5 +175,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          git commit -m "Update processed text files" || echo "No changes to commit"
+          git commit -m "Update individual JSON files with structured novel data" || echo "No changes to commit"
           git push
