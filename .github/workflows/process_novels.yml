@@ -32,9 +32,12 @@ jobs:
         run: |
           python process_novel.py
 
-      # Step 5: Upload the output folder as an artifact
-      - name: Upload output folder
-        uses: actions/upload-artifact@v3
-        with:
-          name: output-folder
-          path: output/
+      # Optional: Commit and push the output folder back to the repository
+      - name: Commit and push changes
+        if: github.ref == 'refs/heads/main'  # Only commit if on the main branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add output/united.json
+          git commit -m "Update united.json with latest data" || echo "No changes to commit"
+          git push
