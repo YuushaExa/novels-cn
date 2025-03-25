@@ -1,50 +1,35 @@
-name: Novel Crawler Debug
+name: Process Novel ZIPs
 
 on:
+  push:
+    paths:
+      - 'novel/**'
   workflow_dispatch:
-    inputs:
-      query:
-        description: 'Novel to search'
-        required: true
-        default: '斗破苍穹'
 
 jobs:
-  debug:
+  process:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
-    - name: Verify files
-      run: |
-        echo "📁 Repository contents:"
-        ls -la
-        echo "📜 First lines of crawler:"
-        head -n 30 piaotian_crawler.py
-
     - name: Install dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get install -y python3-dev python3-pip
-        pip install --upgrade pip wheel
-        pip install requests beautifulsoup4 urllib3
-        pip install git+https://github.com/dipu-bd/lightnovel-crawler.git@master
+        python -m pip install --upgrade pip
+        pip install pyyaml
 
-    - name: Run crawler with test query
-      run: |
-        echo "🟢 Python path: $(which python)"
-        echo "🟢 Python version: $(python --version)"
-        python piaotian_crawler.py "${{ inputs.query }}" || echo "❌ Script failed with exit code $?"
+    - name: Run processing script
+      run: python .github/scripts/process_novels.py
 
-    - name: Show results
-      if: always()
+    - name: Commit and push changes
       run: |
-        echo "📂 Result files:"
-        ls -la results/ || echo "No results directory"
-        cat results/*.json || echo "No result files"
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add output/
+        git commit -m "Update processed novel JSON files"
+        git push
