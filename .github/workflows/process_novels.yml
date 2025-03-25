@@ -107,6 +107,15 @@ jobs:
                   output_path = os.path.join(OUTPUT_DIR, json_filename)
                   with open(output_path, 'w', encoding='utf-8') as f:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
+                  
+                  # Print JSON structure to console
+                  print(f"\nJSON structure for {json_filename}:")
+                  print("=" * 50)
+                  print(f"File contains {len(contents)} items:")
+                  for filename, content in contents.items():
+                      content_preview = content[:100].replace('\n', ' ') + "..." if isinstance(content, str) and len(content) > 100 else content
+                      print(f"- {filename}: {content_preview}")
+                  print("=" * 50)
                   print(f"Saved {json_filename}")
 
           process_novel_folder()
