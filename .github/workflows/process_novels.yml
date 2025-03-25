@@ -124,57 +124,79 @@ jobs:
               
               return novel
 
-          def unzip_and_process(zip_path):
+          def save_novel_structure(novel_name, novel_data, output_base_dir):
+              # Create folder for this novel
+              novel_dir = os.path.join(output_base_dir, novel_name)
+              os.makedirs(novel_dir, exist_ok=True)
+              
+              # Save metadata
+              with open(os.path.join(novel_dir, "metadata.json"), 'w', encoding='utf-8') as f:
+                  json.dump(novel_data["metadata"], f, ensure_ascii=False, indent=4)
+              
+              # Save each chapter as separate JSON
+              chapters_dir = os.path.join(novel_dir, "chapters")
+              os.makedirs(chapters_dir, exist_ok=True)
+              
+              for chapter in novel_data["chapters"]:
+                  chapter_filename = f"chapter_{chapter['chapter_number']}.json"
+                  with open(os.path.join(chapters_dir, chapter_filename), 'w', encoding='utf-8') as f:
+                      json.dump(chapter, f, ensure_ascii=False, indent=4)
+              
+              return len(novel_data["chapters"])
+
+          def unzip_and_process(zip_path, output_base_dir):
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                   temp_dir = os.path.splitext(zip_path)[0]
                   zip_ref.extractall(temp_dir)
                   
-                  novels = {}
+                  results = {}
                   for root, _, files in os.walk(temp_dir):
                       for file in files:
                           file_path = os.path.join(root, file)
                           if file.lower().endswith('.txt'):
                               content = read_file_with_fallback(file_path)
                               novel_data = parse_novel_content(content)
-                              novels[file] = novel_data
+                              novel_name = os.path.splitext(file)[0]
+                              chapter_count = save_novel_structure(novel_name, novel_data, output_base_dir)
+                              results[novel_name] = {
+                                  "metadata_file": f"{novel_name}/metadata.json",
+                                  "chapter_count": chapter_count
+                              }
                           else:
-                              novels[file] = "Non-text file (not processed)"
-                  return novels
+                              results[file] = "Non-text file (not processed)"
+                  return results
 
           def process_novel_folder():
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
-                            
+              
+              summary = {}
+              
               for file in zip_files:
                   zip_path = os.path.join(NOVEL_DIR, file)
                   print(f"\nProcessing {zip_path}...")
                   
-                  novels = unzip_and_process(zip_path)
+                  results = unzip_and_process(zip_path, OUTPUT_DIR)
+                  summary[file] = results
                   
-                  json_filename = os.path.splitext(file)[0] + ".json"
-                  output_path = os.path.join(OUTPUT_DIR, json_filename)
-                  with open(output_path, 'w', encoding='utf-8') as f:
-                      json.dump(novels, f, ensure_ascii=False, indent=4)
-                  
-                  # Create a sample JSON with first item and first chapter
-                  sample_json = {}
-                  for filename, novel_data in novels.items():
-                      if isinstance(novel_data, dict):
-                          sample_novel = {
-                              "metadata": novel_data["metadata"],
-                              "chapters": novel_data["chapters"][:1] if novel_data["chapters"] else []
-                          }
-                          sample_json[filename] = sample_novel
+                  # Print processing summary
+                  print(f"\nProcessing summary for {file}:")
+                  print("=" * 60)
+                  for novel_name, data in results.items():
+                      if isinstance(data, dict):
+                          print(f"{novel_name}:")
+                          print(f"  - Metadata: {data['metadata_file']}")
+                          print(f"  - Chapters: {data['chapter_count']} chapter files")
                       else:
-                          sample_json[filename] = novel_data
-                      break
-                  
-                  print(f"\nSample JSON structure from {json_filename}:")
+                          print(f"{novel_name}: {data}")
                   print("=" * 60)
-                  print(json.dumps(sample_json, ensure_ascii=False, indent=2))
-                  print("=" * 60)
-                  
-                  total_chapters = sum(len(novel["chapters"]) for novel in novels.values() if isinstance(novel, dict))
-                  print(f"✅ Saved {json_filename} (total chapters: {total_chapters})")
+                  print(f"✅ Processed {file}")
+
+              # Save summary
+              with open(os.path.join(OUTPUT_DIR, "processing_summary.json"), 'w', encoding='utf-8') as f:
+                  json.dump(summary, f, ensure_ascii=False, indent=4)
+              
+              print("\nOverall processing complete!")
+              print(f"Summary saved to: {os.path.join(OUTPUT_DIR, 'processing_summary.json')}")
 
           process_novel_folder()
         shell: python
@@ -185,5 +207,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          git commit -m "Update individual JSON files with structured novel data" || echo "No changes to commit"
+          git commit -m "Update novel files with folder structure" || echo "No changes to commit"
           git push
