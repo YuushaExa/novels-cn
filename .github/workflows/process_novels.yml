@@ -50,6 +50,7 @@ jobs:
                   return contents
 
           def process_novel_folder():
+              combined_data = {}
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
                             
               # Process all files
@@ -58,6 +59,7 @@ jobs:
                   print(f"\nProcessing {zip_path}...")
                   
                   contents = unzip_and_read(zip_path)
+                  combined_data[file] = contents
                   
                   # Save individual JSON file
                   json_filename = os.path.splitext(file)[0] + ".json"
@@ -65,6 +67,7 @@ jobs:
                   with open(output_path, 'w', encoding='utf-8') as f:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
                   print(f"Saved {json_filename}")
+
 
           process_novel_folder()
         shell: python
