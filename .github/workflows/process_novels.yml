@@ -53,16 +53,23 @@ jobs:
               """Process all ZIP files in NOVEL_DIR and save JSON outputs."""
               Path(OUTPUT_DIR).mkdir(exist_ok=True)
               zip_files = list(Path(NOVEL_DIR).glob("*.zip"))
+              combined_data = {}
 
               for zip_path in zip_files:
                   print(f"\nProcessing {zip_path.name}...")
                   contents = unzip_and_read(zip_path)
+                  combined_data[zip_path.name] = contents
 
                   json_filename = zip_path.stem + ".json"
                   output_path = Path(OUTPUT_DIR) / json_filename
                   with open(output_path, 'w', encoding='utf-8') as f:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
                   print(f"Saved {json_filename}")
+
+              output_json_path = Path(OUTPUT_DIR) / "united.json"
+              with open(output_json_path, 'w', encoding='utf-8') as f:
+                  json.dump(combined_data, f, ensure_ascii=False, indent=4)
+              print(f"\nCombined JSON saved to {output_json_path}")
 
           if __name__ == "__main__":
               process_novel_folder()
