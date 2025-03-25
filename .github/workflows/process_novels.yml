@@ -68,6 +68,12 @@ jobs:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
                   print(f"Saved {json_filename}")
 
+              # Save combined JSON
+              output_json_path = os.path.join(OUTPUT_DIR, "united.json")
+              with open(output_json_path, 'w', encoding='utf-8') as f:
+                  json.dump(combined_data, f, ensure_ascii=False, indent=4)
+              
+              print(f"\nCombined JSON saved to {output_json_path}")
 
           process_novel_folder()
         shell: python
