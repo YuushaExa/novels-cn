@@ -57,14 +57,7 @@ jobs:
           def process_novel_folder():
               combined_data = {}
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
-              
-              # Process first 2 files and show their contents
-              for file in zip_files[:1]:
-                  zip_path = os.path.join(NOVEL_DIR, file)
-                  print(f"\nContents of {file}:")
-                  contents = unzip_and_read(zip_path)
-                  print(json.dumps(contents, indent=1, ensure_ascii=False)[:10000] + ("..." if len(json.dumps(contents)) > 10000 else ""))
-                  
+                 
               # Process all files
               for file in zip_files:
                   zip_path = os.path.join(NOVEL_DIR, file)
