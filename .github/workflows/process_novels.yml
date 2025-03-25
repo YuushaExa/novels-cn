@@ -26,7 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
 
-      # Step 4: Process zip files and generate united.json
+      # Step 4: Process zip files and generate individual JSON files
       - name: Process novel folder
         run: |
           import os
@@ -56,23 +56,38 @@ jobs:
 
           def process_novel_folder():
               combined_data = {}
+              zip_files = [f for f in os.listdir(NOVEL_DIR) if f.endswith(".zip")]
+              
+              # Process first 2 files and show their contents
+              for file in zip_files[:2]:
+                  zip_path = os.path.join(NOVEL_DIR, file)
+                  print(f"\nContents of {file}:")
+                  contents = unzip_and_read(zip_path)
+                  print(json.dumps(contents, indent=2, ensure_ascii=False)[:1000] + ("..." if len(json.dumps(contents)) > 1000 else ""))
+                  
+              # Process all files
+              for file in zip_files:
+                  zip_path = os.path.join(NOVEL_DIR, file)
+                  print(f"\nProcessing {zip_path}...")
+                  
+                  contents = unzip_and_read(zip_path)
+                  combined_data[file] = contents
+                  
+                  # Save individual JSON file
+                  json_filename = os.path.splitext(file)[0] + ".json"
+                  output_path = os.path.join(OUTPUT_DIR, json_filename)
+                  with open(output_path, 'w', encoding='utf-8') as f:
+                      json.dump(contents, f, ensure_ascii=False, indent=4)
+                  print(f"Saved {json_filename}")
 
-              for file in os.listdir(NOVEL_DIR):
-                  if file.endswith(".zip"):
-                      zip_path = os.path.join(NOVEL_DIR, file)
-                      print(f"Processing {zip_path}...")
-                      
-                      contents = unzip_and_read(zip_path)
-                      combined_data[file] = contents
-
+              # Save combined JSON
               output_json_path = os.path.join(OUTPUT_DIR, "united.json")
               with open(output_json_path, 'w', encoding='utf-8') as f:
                   json.dump(combined_data, f, ensure_ascii=False, indent=4)
               
-              print(f"Combined JSON saved to {output_json_path}")
+              print(f"\nCombined JSON saved to {output_json_path}")
 
           process_novel_folder()
-
         shell: python
 
       # Step 5: Commit and push the output folder back to the repository
@@ -81,6 +96,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add output/united.json
-          git commit -m "Update united.json with latest data" || echo "No changes to commit"
+          git add output/
+          git commit -m "Update JSON files with latest data" || echo "No changes to commit"
           git push
