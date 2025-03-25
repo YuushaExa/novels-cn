@@ -32,13 +32,59 @@ jobs:
           NOVEL_DIR = "novel"
           OUTPUT_DIR = "output"
 
+          # Common encodings to try (in order of preference)
+          COMMON_ENCODINGS = [
+              'utf-8',
+              'gb18030',  # Chinese national standard (superset of gb2312)
+              'big5',      # Traditional Chinese
+              'gbk',       # Simplified Chinese
+              'gb2312',
+              'utf-16',
+              'utf-16-le',
+              'utf-16-be',
+              'iso-8859-1'
+          ]
+
           os.makedirs(OUTPUT_DIR, exist_ok=True)
 
           def detect_encoding(file_path):
+              # First try chardet
               with open(file_path, 'rb') as f:
-                  rawdata = f.read(1024)  # Read first 1KB to guess encoding
-              result = detect(rawdata)
-              return result['encoding']
+                  rawdata = f.read(1024)
+                  result = detect(rawdata)
+                  if result['confidence'] > 0.9:
+                      return result['encoding']
+              
+              # If chardet isn't confident, try our common encodings
+              for encoding in COMMON_ENCODINGS:
+                  try:
+                      with open(file_path, 'r', encoding=encoding) as f:
+                          f.read(1024)
+                      return encoding
+                  except:
+                      continue
+              
+              return 'utf-8'  # Default fallback
+
+          def read_file_with_fallback(file_path):
+              # Try detected encoding first
+              encoding = detect_encoding(file_path)
+              try:
+                  with open(file_path, 'r', encoding=encoding) as f:
+                      return f.read()
+              except Exception as e:
+                  pass
+              
+              # If detected encoding fails, try all encodings systematically
+              for encoding in COMMON_ENCODINGS:
+                  try:
+                      with open(file_path, 'r', encoding=encoding) as f:
+                          return f.read()
+                  except:
+                      continue
+              
+              # If all else fails, return error with encoding info
+              return f"ERROR: Could not decode file with any encoding (tried: {', '.join(COMMON_ENCODINGS)})"
 
           def unzip_and_read(zip_path):
               with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -49,19 +95,10 @@ jobs:
                   for root, _, files in os.walk(temp_dir):
                       for file in files:
                           file_path = os.path.join(root, file)
-                          try:
-                              # First try UTF-8
-                              with open(file_path, 'r', encoding='utf-8') as f:
-                                  contents[file] = f.read()
-                          except UnicodeDecodeError:
-                              try:
-                                  # Try detected encoding
-                                  encoding = detect_encoding(file_path)
-                                  with open(file_path, 'r', encoding=encoding) as f:
-                                      contents[file] = f.read()
-                              except Exception as e:
-                                  print(f"Failed to read {file_path}: {str(e)}")
-                                  contents[file] = f"ERROR: Could not decode file - {str(e)}"
+                          if file.lower().endswith('.txt'):
+                              contents[file] = read_file_with_fallback(file_path)
+                          else:
+                              contents[file] = "Non-text file (not processed)"
                   return contents
 
           def process_novel_folder():
