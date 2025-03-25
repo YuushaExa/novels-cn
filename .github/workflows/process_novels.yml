@@ -108,21 +108,18 @@ jobs:
                   with open(output_path, 'w', encoding='utf-8') as f:
                       json.dump(contents, f, ensure_ascii=False, indent=4)
                   
-                  # Print exactly 3 items from the JSON to console
-                  print(f"\nSample content from {json_filename} (showing 3 items):")
-                  print("=" * 60)
+                  # Create a sample JSON with first 3 items
+                  sample_json = {}
                   items_shown = 0
                   for filename, content in contents.items():
                       if items_shown >= 3:
                           break
-                      content_preview = (content[:100].replace('\n', ' ') + "...") if isinstance(content, str) and len(content) > 100 else content
-                      print(f"📄 {filename}")
-                      print(f"   {content_preview}\n")
+                      sample_json[filename] = content if len(content) <= 100 else content[:100] + "..."
                       items_shown += 1
                   
-                  remaining_items = len(contents) - 3
-                  if remaining_items > 0:
-                      print(f"... plus {remaining_items} more items not shown ...")
+                  print(f"\nSample JSON structure from {json_filename}:")
+                  print("=" * 60)
+                  print(json.dumps(sample_json, ensure_ascii=False, indent=2))
                   print("=" * 60)
                   print(f"✅ Saved {json_filename} (total items: {len(contents)})")
 
