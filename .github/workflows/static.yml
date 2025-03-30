@@ -44,234 +44,155 @@ jobs:
           os.makedirs(OUTPUT_DIR, exist_ok=True)
 
           # --- Utility Functions (Encoding, Chinese Numerals) ---
-          # (Keep detect_encoding, read_file_with_fallback, chinese_to_arabic as they were in the previous version)
-          # ... (Previous versions of these functions are assumed here for brevity) ...
-          # Make sure you have the robust versions from the previous iteration
+          # (Keep detect_encoding, read_file_with_fallback, chinese_to_arabic as is)
           def detect_encoding(file_path):
-              """Detect encoding using chardet with a larger sample size."""
               try:
                   with open(file_path, 'rb') as f:
-                      rawdata = f.read(4096)
+                      rawdata = f.read(4096);
                       if not rawdata: return None
                       result = detect(rawdata)
-                      if result['encoding'] and result['confidence'] > 0.7:
-                         return result['encoding']
-                      else:
-                         return None
+                      return result['encoding'] if result['encoding'] and result['confidence'] > 0.7 else None
               except Exception: return None
 
           def read_file_with_fallback(file_path):
-              """Read file, trying detected encoding first, then fallbacks."""
-              detected_enc = detect_encoding(file_path)
-              tried_encodings = set()
-
+              detected_enc = detect_encoding(file_path); tried_encodings = set()
               if detected_enc:
                   try:
-                      normalized_enc = detected_enc.lower()
-                      with open(file_path, 'r', encoding=normalized_enc) as f: return f.read()
+                      norm_enc = detected_enc.lower();
+                      with open(file_path, 'r', encoding=norm_enc) as f: return f.read()
                   except (UnicodeDecodeError, LookupError): pass
-                  finally:
-                      if detected_enc: tried_encodings.add(detected_enc.lower())
-
+                  finally: tried_encodings.add(detected_enc.lower()) if detected_enc else None
               for enc in COMMON_ENCODINGS:
-                  normalized_enc = enc.lower()
-                  if normalized_enc in tried_encodings: continue
+                  norm_enc = enc.lower();
+                  if norm_enc in tried_encodings: continue
                   try:
-                      with open(file_path, 'r', encoding=normalized_enc) as f:
-                          print(f"Successfully read {os.path.basename(file_path)} with fallback encoding '{normalized_enc}'")
-                          return f.read()
-                  except (UnicodeDecodeError, LookupError): tried_encodings.add(normalized_enc)
+                      with open(file_path, 'r', encoding=norm_enc) as f: print(f"Read {os.path.basename(file_path)} with fallback '{norm_enc}'"); return f.read()
+                  except (UnicodeDecodeError, LookupError): tried_encodings.add(norm_enc)
                   except FileNotFoundError: raise ValueError(f"File not found: {file_path}")
-                  except Exception: tried_encodings.add(normalized_enc)
-
-              raise ValueError(f"Could not decode file {os.path.basename(file_path)} with any tried encoding ({', '.join(tried_encodings)}).")
+                  except Exception: tried_encodings.add(norm_enc)
+              raise ValueError(f"Could not decode {os.path.basename(file_path)} with tried encodings ({', '.join(tried_encodings)}).")
 
           def chinese_to_arabic(chinese_num_str):
-              """Converts Chinese numerals (string) to Arabic integers."""
-              if not isinstance(chinese_num_str, str):
-                  if isinstance(chinese_num_str, (int, float)): return int(chinese_num_str)
+              if not isinstance(chinese_num_str, str): return int(chinese_num_str) if isinstance(chinese_num_str, (int, float)) else None
+              s = chinese_num_str.strip();
+              if not s: return None
+              if s.isdigit(): return int(s)
+              if not all(c in '零一二三四五六七八九十百千万億' for c in s): return None
+              n_map={'零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9}; u_map={'十':10,'百':100,'千':1000,'万':10000,'億':100000000}
+              t=0; c=0; sec=0; u=1;
+              if s=='十': return 10
+              if s.startswith('十'): s='一'+s
+              for char in s:
+                  if char in n_map: c=n_map[char]
+                  elif char in u_map:
+                      cur_u=u_map[char];
+                      if cur_u in [10000,100000000]: sec+=(c if c>0 else (1 if u>1 else 0))*u; t+=sec*cur_u; sec=0; c=0; u=1
+                      else: sec+=(c if c>0 else 1)*cur_u; c=0; u=cur_u
                   else: return None
-
-              chinese_num_str = chinese_num_str.strip()
-              if not chinese_num_str: return None
-              if chinese_num_str.isdigit():
-                  try: return int(chinese_num_str)
-                  except ValueError: return None
-
-              valid_chars = '零一二三四五六七八九十百千万億'
-              if not all(c in valid_chars for c in chinese_num_str): return None
-
-              num_map = {'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9}
-              unit_map = {'十': 10, '百': 100, '千': 1000, '万': 10000, '億': 100000000}
-
-              total = 0; current_num = 0; section_num = 0; unit = 1
-              if chinese_num_str == '十': return 10
-              if chinese_num_str.startswith('十'): chinese_num_str = '一' + chinese_num_str
-
-              for char in chinese_num_str:
-                  if char in num_map: current_num = num_map[char]
-                  elif char in unit_map:
-                      current_unit = unit_map[char]
-                      if current_unit in [10000, 100000000]:
-                          section_num += (current_num if current_num > 0 else (1 if unit > 1 else 0)) * unit
-                          total += section_num * current_unit
-                          section_num = 0; current_num = 0; unit = 1
-                      else:
-                          section_num += (current_num if current_num > 0 else 1) * current_unit
-                          current_num = 0; unit = current_unit
-                  else: return None
-              section_num += current_num * (unit if unit > 1 and current_num > 0 and section_num == 0 else 1)
-              total += section_num
-              return total
+              sec+=c*(u if u>1 and c>0 and sec==0 else 1); t+=sec
+              return t
           # --- End Utility Functions ---
 
 
+          # --- parse_novel_content (Includes Sorting) ---
+          # (Keep this function exactly as it was in the previous version with the sorting logic)
           def parse_novel_content(content):
               """Parses the raw text content into metadata and chapters, then sorts chapters."""
               novel = {
                   "metadata": {"name": "未知", "author": "未知", "status": "未知", "introduction": "無"},
                   "chapters": []
               }
-
-              # --- Metadata Extraction (Use robust patterns from previous iteration) ---
-              # ... (Assume metadata patterns and extraction logic are here) ...
+              # Metadata Extraction Patterns...
               metadata_patterns = [
                   re.compile(r'《(?P<name>.+?)》\s*作者：(?P<author>.+?)\n.*?(?:內容|内容)簡介：\s*(?P<intro>.*?)\n(?:作品(?:狀態|状态)：\s*(?P<status>.+?)\n)?', re.DOTALL | re.IGNORECASE),
                   re.compile(r'『(?P<name>.+?)/作者:(?P<author>.+?)』.*?『狀態:更新到:(?P<status>.+?)』.*?『(?:內容|内容)簡介:(?P<intro>.+?)』', re.DOTALL | re.IGNORECASE),
                   re.compile(r'^(?P<name>[^\n]+)\n(?:作者：?|作\s*者：?)\s*(?P<author>[^\n]+)', re.MULTILINE | re.IGNORECASE),
                   re.compile(r'(?:書名|书名|名稱|名称)\s*[:：]\s*(?P<name>[^\n]+).*?(?:作者)\s*[:：]\s*(?P<author>[^\n]+).*?(?:(?:內容|内容)簡介?|简介)\s*[:：]\s*(?P<intro>.*?)(?=\n(?:[^\n]+[:：])|\Z).*?(?:(?:狀態|状态))\s*[:：]\s*(?P<status>[^\n]+)?', re.DOTALL | re.IGNORECASE)
               ]
-              meta_match = None
-              content_start_index = 0
+              meta_match = None; content_start_index = 0
               for i, pattern in enumerate(metadata_patterns):
                   meta_match = pattern.search(content)
                   if meta_match:
-                      # print(f"Metadata found using pattern #{i+1}") # Optional debug log
                       meta_dict = meta_match.groupdict()
                       novel["metadata"]["name"] = meta_dict.get("name", "未知").strip()
                       novel["metadata"]["author"] = meta_dict.get("author", "未知").strip()
                       novel["metadata"]["status"] = meta_dict.get("status", "未知").strip() if meta_dict.get("status") else "未知"
                       novel["metadata"]["introduction"] = meta_dict.get("intro", "無").strip() if meta_dict.get("intro") else "無"
-                      content_start_index = meta_match.end()
-                      break
-              else: print("Warning: No metadata patterns matched.") # Keep warning
-
-              # --- Chapter Content Area Identification ---
+                      content_start_index = meta_match.end(); break
+              else: print("Warning: No metadata patterns matched.")
+              # Chapter Content Area Identification...
               chapter_content_area = content[content_start_index:]
               chapter_start_markers = [r'------章節內容開始-------', r'正文卷', r'VIP卷', r'作品相关', r'正文']
               marker_found = False
               for marker in chapter_start_markers:
                    marker_match = re.search(marker, chapter_content_area, re.IGNORECASE)
-                   if marker_match:
-                       # print(f"Found chapter start marker: '{marker}'") # Optional debug log
-                       chapter_content_area = chapter_content_area[marker_match.end():]
-                       marker_found = True
-                       break
+                   if marker_match: chapter_content_area = chapter_content_area[marker_match.end():]; marker_found = True; break
               chapter_content_area = chapter_content_area.strip()
-
-              # --- Chapter Parsing (Use robust pattern from previous iteration) ---
+              # Chapter Parsing Pattern...
               chapter_pattern = re.compile(
                   r'^[ \t]*(?:(?:(?:正文[ \t]*)?第[ \t]*([零一二三四五六七八九十百千万]+|[0-9]+)[ \t]*[章节卷集篇][ \t]*)|(Chapter[ \t]*([0-9]+)[ \t]*))([^\n]*)?\n([\s\S]*?)(?=\n[ \t]*(?:(?:正文[ \t]*)?第[ \t]*(?:[零一二三四五六七八九十百千万]+|[0-9]+)[ \t]*[章节卷集篇]|Chapter[ \t]*[0-9]+)|\Z)',
                   re.MULTILINE | re.IGNORECASE
               )
-              # Note: Group indices might shift slightly if pattern changes. Adjust below if needed.
-              # Group 1: Chinese Numeral/Digit, Group 2: "Chapter X", Group 3: English Digit, Group 4: Title, Group 5: Content
-
-              found_chapters = []
-              last_match_end = 0
-
+              found_chapters = []; last_match_end = 0
               for match in chapter_pattern.finditer(chapter_content_area):
-                  # Extract based on potential group structure
-                  chinese_num = match.group(1)
-                  # english_full = match.group(2) # e.g., "Chapter 123"
-                  english_num = match.group(3) # e.g., "123"
-                  title = (match.group(4) or "").strip()
-                  text = match.group(5)
-
-                  chapter_num_str = chinese_num or english_num # Prioritize Chinese if both somehow matched (unlikely)
-                  if not chapter_num_str: chapter_num_str = f"sequential_{len(found_chapters)+1}"
-
-                  if text:
-                        text = re.sub(r'\r\n', '\n', text)
-                        text = re.sub(r'\n{3,}', '\n\n', text)
-                        text = text.strip()
+                  chinese_num = match.group(1); english_num = match.group(3); title = (match.group(4) or "").strip(); text = match.group(5)
+                  chapter_num_str = chinese_num or english_num or f"sequential_{len(found_chapters)+1}"
+                  if text: text = re.sub(r'\r\n','\n',re.sub(r'\n{3,}','\n\n',text)).strip()
                   else: text = ""
-
                   numeric_chapter_num = chinese_to_arabic(chapter_num_str)
-
                   found_chapters.append({
-                      "chapter_number_original": chapter_num_str,
-                      "chapter_number_numeric": numeric_chapter_num, # Will be None if conversion fails
-                      "chapter_title": title if title else f"Chapter {chapter_num_str}",
-                      "content": text
+                      "chapter_number_original": chapter_num_str, "chapter_number_numeric": numeric_chapter_num,
+                      "chapter_title": title if title else f"Chapter {chapter_num_str}", "content": text
                   })
                   last_match_end = match.end()
-
-              # --- Handle Preface ---
+              # Preface Handling...
               first_match_start = chapter_pattern.search(chapter_content_area).start() if chapter_pattern.search(chapter_content_area) else len(chapter_content_area)
               potential_preface = chapter_content_area[:first_match_start].strip()
               if potential_preface and len(potential_preface) > 50:
-                   print(f"Potential preface/unmatched content found ({len(potential_preface)} chars). Adding as Chapter 0.")
-                   # Ensure numeric is 0 for sorting preface first
-                   found_chapters.append({ # Use append here, sort later
-                       "chapter_number_original": "0",
-                       "chapter_number_numeric": 0, # Explicitly set to 0
-                       "chapter_title": "序章/前言",
-                       "content": potential_preface
-                   })
+                   print(f"Preface found ({len(potential_preface)} chars). Adding as Chapter 0.")
+                   found_chapters.append({"chapter_number_original": "0", "chapter_number_numeric": 0, "chapter_title": "序章/前言", "content": potential_preface})
               elif not found_chapters and chapter_content_area:
-                  print("Warning: No chapters matched pattern. Saving all content as Chapter 1.")
-                  found_chapters.append({
-                      "chapter_number_original": "1", "chapter_number_numeric": 1,
-                      "chapter_title": "全文", "content": chapter_content_area
-                  })
-
-              # --- *** SORT Chapters *** ---
-              # Sort primarily by numeric chapter number. Place None (non-convertible) at the end.
-              # Place chapter 0 (preface) at the beginning.
-              def sort_key(chap):
-                  num = chap.get('chapter_number_numeric')
-                  if num == 0: return -1 # Ensure preface comes first
-                  if num is None: return float('inf') # Place unparsable numbers last
-                  return num
-
+                  print("Warning: No chapters matched. Saving all as Chapter 1.")
+                  found_chapters.append({"chapter_number_original": "1", "chapter_number_numeric": 1, "chapter_title": "全文", "content": chapter_content_area})
+              # Sorting Logic...
+              def sort_key(chap): num = chap.get('chapter_number_numeric'); return -1 if num == 0 else (float('inf') if num is None else num)
               found_chapters.sort(key=sort_key)
-              # --- *** End Sorting *** ---
-
               novel["chapters"] = found_chapters
               return novel
+          # --- End parse_novel_content ---
 
 
+          # --- save_novel_as_single_json (Saves the provided data) ---
+          # (Keep this function exactly as it was)
           def save_novel_as_single_json(novel_name, novel_data, output_base_dir):
-              """Save novel data (metadata + chapters) as a single JSON file."""
+              """Save the entire novel data (metadata + chapters) as a single JSON file."""
               sanitized_name = re.sub(r'[<>:"/\\|?*]', '_', novel_name)[:200]
               output_file_path = os.path.join(output_base_dir, f"{sanitized_name}.json")
               try:
                   with open(output_file_path, 'w', encoding='utf-8') as f:
-                      # Use indent=2 for smaller file size
                       json.dump(novel_data, f, ensure_ascii=False, indent=2)
-                  # Return the number of chapters *actually saved* in this specific call
-                  return len(novel_data.get("chapters", []))
+                  return len(novel_data.get("chapters", [])) # Return chapter count saved
               except Exception as e:
                   print(f"Error saving JSON for novel '{novel_name}': {e}")
-                  raise # Re-raise to be caught in the main loop
+                  raise
+          # --- End save_novel_as_single_json ---
 
 
+          # --- unzip_and_process (Logs first 3, saves ALL) ---
           def unzip_and_process(zip_path, output_base_dir):
-              """Unzips, processes text files, logs limited details, saves limited JSON."""
+              """Unzips, processes text files, logs limited details, saves ALL chapters."""
               results = {}
               temp_dir = None
 
               try:
+                  # --- Extraction (remains the same) ---
                   zip_filename = os.path.basename(zip_path)
                   temp_dir_name = os.path.splitext(zip_filename)[0]
                   temp_parent_dir = os.path.dirname(zip_path)
                   temp_dir = os.path.join(temp_parent_dir, f"temp_extract_{temp_dir_name}")
-
                   if os.path.exists(temp_dir): shutil.rmtree(temp_dir, ignore_errors=True)
                   os.makedirs(temp_dir, exist_ok=True)
-
-                  print(f"Extracting '{zip_filename}' to '{temp_dir}'...")
+                  print(f"Extracting '{zip_filename}' to '{temp_dir}'...");
                   with zipfile.ZipFile(zip_path, 'r') as zip_ref: zip_ref.extractall(temp_dir)
                   print(f"Extraction complete.")
 
@@ -283,27 +204,25 @@ jobs:
                               print(f"\n--- Processing text file: {file} ---")
 
                               try:
-                                  # 1. Read and Parse
+                                  # 1. Read and Parse (includes sorting)
                                   content = read_file_with_fallback(file_path)
                                   if not content or content.isspace():
                                       results[file] = {"status": "skipped", "reason": "Empty file"}
                                       continue
                                   print(f"Parsing content for: {file}")
-                                  novel_data = parse_novel_content(content) # Includes sorting now
+                                  novel_data = parse_novel_content(content) # Contains metadata + all sorted chapters
 
-                                  # 2. Prepare for Logging & Saving
+                                  # 2. Prepare for Logging
                                   display_name = novel_data.get("metadata", {}).get("name") or novel_name_base
                                   if display_name == "未知": display_name = novel_name_base
-
-                                  # Get the original count *after sorting*
                                   all_chapters = novel_data.get("chapters", [])
-                                  original_chapter_count = len(all_chapters)
+                                  total_chapter_count = len(all_chapters)
 
-                                  # 3. *** Log Limited Chapter Info ***
-                                  print(f"--- Chapter Index for: {display_name} (Displaying first 3/{original_chapter_count}) ---")
+                                  # 3. *** Log Limited Chapter Info (First 3) ***
+                                  print(f"--- Chapter Index for: {display_name} (Displaying first 3/{total_chapter_count}) ---")
                                   if all_chapters:
                                       for i, chapter in enumerate(all_chapters):
-                                          if i >= 3: # Limit to first 3
+                                          if i >= 3: # Limit console log
                                               print("  ...")
                                               break
                                           num_orig = chapter.get('chapter_number_original', 'N/A')
@@ -314,25 +233,17 @@ jobs:
                                       print("  - No chapters were found or extracted.")
                                   print(f"--- End Chapter Index Log ---")
 
-                                  # 4. *** Truncate Chapters for Saving ***
-                                  chapters_to_save = all_chapters[:3] # Take only the first 3 (or fewer if less than 3 exist)
-                                  novel_data_to_save = {
-                                      "metadata": novel_data.get("metadata", {}),
-                                      "chapters": chapters_to_save
-                                  }
-                                  if original_chapter_count > 3:
-                                      print(f"NOTE: Saving only the first 3 chapters out of {original_chapter_count} found to JSON.")
-
-
-                                  # 5. Save Truncated Data as JSON
+                                  # 4. *** Save FULL Data as JSON ***
+                                  #    (No truncation needed here, pass the original novel_data)
                                   print(f"Saving parsed data for '{display_name}' as JSON...")
-                                  novel_output_name = novel_name_base # Use original filename base for output json name
-                                  saved_chapter_count = save_novel_as_single_json(novel_output_name, novel_data_to_save, output_base_dir)
+                                  novel_output_name = novel_name_base
+                                  # Pass the complete novel_data, which includes all chapters
+                                  saved_chapter_count = save_novel_as_single_json(novel_output_name, novel_data, output_base_dir)
+                                  # saved_chapter_count should now equal total_chapter_count if save was successful
 
-                                  # 6. Record Success Summary (Report ORIGINAL chapter count)
+                                  # 5. Record Success Summary (Report total chapters found/saved)
                                   first_chap_title = all_chapters[0].get("chapter_title", "N/A") if all_chapters else "N/A"
-                                  # Use original last chapter title for summary, even if not saved
-                                  last_chap_title_original = all_chapters[-1].get("chapter_title", "N/A") if all_chapters else "N/A"
+                                  last_chap_title = all_chapters[-1].get("chapter_title", "N/A") if all_chapters else "N/A"
 
                                   sanitized_output_name = re.sub(r'[<>:"/\\|?*]', '_', novel_output_name)[:200]
 
@@ -341,39 +252,33 @@ jobs:
                                       "input_file": file,
                                       "output_file": f"{sanitized_output_name}.json",
                                       "processed_novel_name": display_name,
-                                      "chapters_found": original_chapter_count, # Report total found
-                                      "chapters_saved": saved_chapter_count,   # Report count saved to JSON
+                                      "chapters_found_and_saved": saved_chapter_count, # Reflects count in JSON
                                       "first_chapter_title": first_chap_title,
-                                      "last_chapter_title_found": last_chap_title_original # Title of last chapter found
+                                      "last_chapter_title_saved": last_chap_title # Title of last chapter saved
                                   }
-                                  print(f"Successfully processed: '{file}' -> '{sanitized_output_name}.json' (Found {original_chapter_count} chapters, Saved {saved_chapter_count})")
-
+                                  # Adjust success message to reflect all chapters saved
+                                  print(f"Successfully processed: '{file}' -> '{sanitized_output_name}.json' (Saved {saved_chapter_count} chapters)")
 
                               # --- Error Handling ---
-                              except ValueError as e:
-                                   print(f"!!! Error processing file {file}: {e}")
-                                   results[file] = {"status": "error", "input_file": file, "error": f"File Processing Error: {e}"}
-                              except Exception as e:
-                                  print(f"!!! Unexpected Error processing file {file}: {e}")
-                                  traceback.print_exc()
-                                  results[file] = {"status": "error", "input_file": file, "error": f"Unexpected Processing Error: {e}"}
-                          else:
-                              print(f"Skipping non-txt file: {file}")
+                              except ValueError as e: print(f"!!! Error processing file {file}: {e}"); results[file]={"status":"error","input_file":file,"error":f"File Error: {e}"}
+                              except Exception as e: print(f"!!! Unexpected Error processing file {file}: {e}"); traceback.print_exc(); results[file]={"status":"error","input_file":file,"error":f"Unexpected Error: {e}"}
+                          else: print(f"Skipping non-txt file: {file}")
 
               # --- Zip/Cleanup Handling ---
-              except zipfile.BadZipFile: print(f"Error: '{zip_filename}' invalid zip."); results[zip_filename] = {"status": "error", "error": "Invalid zip"}
-              except FileNotFoundError: print(f"Error: Zip file not found: {zip_path}"); results[zip_path] = {"status": "error", "error": "Zip not found"}
-              except Exception as e: print(f"Zip processing error '{zip_filename}': {e}"); traceback.print_exc(); results[zip_filename or zip_path] = {"status": "error", "error": f"Zip Error: {e}"}
+              except zipfile.BadZipFile: print(f"Error: '{zip_filename}' invalid zip."); results[zip_filename]={"status":"error","error":"Invalid zip"}
+              except FileNotFoundError: print(f"Error: Zip file not found: {zip_path}"); results[zip_path]={"status":"error","error":"Zip not found"}
+              except Exception as e: print(f"Zip processing error '{zip_filename}': {e}"); traceback.print_exc(); results[zip_filename or zip_path]={"status":"error","error":f"Zip Error: {e}"}
               finally:
                   if temp_dir and os.path.exists(temp_dir):
                        try: print(f"Cleaning temp dir: {temp_dir}"); shutil.rmtree(temp_dir)
                        except OSError as e: print(f"Warn: Could not remove temp dir {temp_dir}: {e}")
               return results
+          # --- End unzip_and_process ---
 
 
+          # --- process_novel_folder (Main Orchestration) ---
+          # (Keep this function exactly as it was)
           def process_novel_folder():
-              """Main function to find and process zip files."""
-              # ... (Setup and Zip file finding logic remains the same) ...
               if not os.path.exists(NOVEL_DIR): print(f"Error: Input directory '{NOVEL_DIR}' does not exist."); return
               print(f"Starting novel processing...\nInput: '{os.path.abspath(NOVEL_DIR)}'\nOutput: '{os.path.abspath(OUTPUT_DIR)}'")
               zip_files = [f for f in os.listdir(NOVEL_DIR) if f.lower().endswith(".zip")]
@@ -381,45 +286,36 @@ jobs:
 
               print(f"Found {len(zip_files)} zip file(s): {', '.join(zip_files)}")
               overall_summary = {}
-
               for zip_file_name in zip_files:
                   zip_file_path = os.path.join(NOVEL_DIR, zip_file_name)
                   print(f"\n================ Processing Zip: {zip_file_name} ================")
                   file_results = unzip_and_process(zip_file_path, OUTPUT_DIR)
                   overall_summary[zip_file_name] = file_results
-                  # ... (Immediate summary printing remains the same) ...
                   print(f"\n--- Summary for Zip: {zip_file_name} ---")
                   if file_results:
                       success = sum(1 for r in file_results.values() if r.get("status") == "success")
                       errors = sum(1 for r in file_results.values() if r.get("status") == "error")
                       skipped = sum(1 for r in file_results.values() if r.get("status") == "skipped")
                       print(f"Items within zip: {len(file_results)} | Succeeded: {success} | Failed: {errors} | Skipped: {skipped}")
-                      if errors > 0:
-                          print("Errors in:")
-                          for fn, res in file_results.items():
-                              if res.get("status") == "error": print(f"  - {res.get('input_file', fn)}: {res.get('error')}")
-                  else: # Check for zip-level error
-                      if zip_file_name in overall_summary and overall_summary[zip_file_name].get("status") == "error":
-                          print(f"Failed to process zip file itself: {overall_summary[zip_file_name].get('error')}")
-                      else: print("No text files found or processed in this zip.")
+                      if errors > 0: print("Errors in:"); [print(f"  - {res.get('input_file', fn)}: {res.get('error')}") for fn, res in file_results.items() if res.get('status') == "error"]
+                  else:
+                       if zip_file_name in overall_summary and overall_summary[zip_file_name].get("status") == "error": print(f"Failed to process zip file itself: {overall_summary[zip_file_name].get('error')}")
+                       else: print("No text files found or processed in this zip.")
                   print("------------------------------------")
-
-              # --- Save Overall Summary ---
               summary_file_path = os.path.join(OUTPUT_DIR, "processing_summary.json")
               print(f"\nSaving overall summary to: {summary_file_path}")
               try:
-                  with open(summary_file_path, 'w', encoding='utf-8') as f:
-                      json.dump(overall_summary, f, ensure_ascii=False, indent=2)
+                  with open(summary_file_path, 'w', encoding='utf-8') as f: json.dump(overall_summary, f, ensure_ascii=False, indent=2)
                   print(f"Overall summary saved successfully.")
               except Exception as e: print(f"Error: Failed to save overall summary: {e}")
               print("\nNovel processing finished.")
+          # --- End process_novel_folder ---
 
           # --- Main Execution ---
           process_novel_folder()
         shell: python
 
       - name: Commit and push changes
-        # (Commit step remains the same - checking for changes in output/)
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.name "github-actions[bot]"
@@ -432,8 +328,8 @@ jobs:
             echo "No changes detected in output/ directory. Nothing to commit."
           else
             echo "Changes detected in output/. Committing..."
-            # Update commit message to reflect JSON truncation
-            git commit -m "Update processed novels (JSON limited to first 3 chapters)"
+            # Commit message reflects full chapter saving
+            git commit -m "Update processed novels (JSON with all chapters, log limited)"
             echo "Pushing changes..."
             git push
           fi
