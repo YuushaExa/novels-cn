@@ -1,0 +1,13 @@
+{
+  "598185_tw.zip": {
+    "捉妖.txt": {
+      "status": "success",
+      "input_file": "捉妖.txt",
+      "output_file": "捉妖.json",
+      "processed_novel_name": "捉妖",
+      "chapters_found_and_saved": 290,
+      "first_chapter_title": "姜雲",
+      "last_chapter_title_saved": "夢"
+    }
+  }
+}
