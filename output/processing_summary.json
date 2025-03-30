@@ -5,10 +5,9 @@
       "input_file": "捉妖.txt",
       "output_file": "捉妖.json",
       "processed_novel_name": "捉妖",
-      "chapters_found": 290,
-      "chapters_saved": 3,
+      "chapters_found_and_saved": 290,
       "first_chapter_title": "姜雲",
-      "last_chapter_title_found": "夢"
+      "last_chapter_title_saved": "夢"
     }
   }
 }
