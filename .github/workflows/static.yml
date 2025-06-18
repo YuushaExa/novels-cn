@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4 # Use the latest version
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # Use the latest version
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
           # This is the key change for speed: cache pip dependencies
@@ -24,9 +24,82 @@ jobs:
       - name: Install dependencies
         run: pip install python-docx
 
-      - name: Convert TXT to DOCX
-        # Run the dedicated, parallelized Python script
-        run: python convert.py
+      - name: Convert TXT to DOCX (in parallel)
+        shell: python
+        run: |
+          import os
+          import time
+          from pathlib import Path
+          from concurrent.futures import ProcessPoolExecutor, as_completed
+
+          from docx import Document
+          from docx.shared import Pt
+
+          # --- Configuration ---
+          INPUT_DIR = Path("novel")
+          OUTPUT_DIR = Path("output")
+          MAX_WORKERS = os.cpu_count() # Use all available CPU cores for max speed
+
+          # --- Helper Function to convert a single file ---
+          def convert_one_file(txt_path: Path) -> str:
+              """Converts a single TXT to DOCX and returns a status message."""
+              try:
+                  doc = Document()
+                  # Read line-by-line for better memory efficiency with large files
+                  with txt_path.open('r', encoding='utf-8') as f:
+                      for line in f:
+                          paragraph_text = line.strip()
+                          if paragraph_text:  # Skip empty lines
+                              p = doc.add_paragraph(paragraph_text)
+                              p.paragraph_format.space_after = Pt(6)
+
+                  # Save the DOCX file
+                  output_filename = f"{txt_path.stem}.docx"
+                  output_path = OUTPUT_DIR / output_filename
+                  doc.save(output_path)
+                  return f"✅ Successfully converted {txt_path.name}"
+              except Exception as e:
+                  return f"❌ Error converting {txt_path.name}: {e}"
+
+          # --- Main execution logic ---
+          start_time = time.time()
+          print("--- Starting TXT to DOCX Conversion ---")
+
+          if not INPUT_DIR.exists():
+              print(f"Error: Input directory '{INPUT_DIR}' does not exist.")
+              exit(1)
+
+          OUTPUT_DIR.mkdir(exist_ok=True)
+
+          txt_files = list(INPUT_DIR.glob("*.txt"))
+          if not txt_files:
+              print(f"No .txt files found in '{INPUT_DIR}'.")
+              exit(0)
+
+          print(f"Found {len(txt_files)} TXT files. Processing in parallel with up to {MAX_WORKERS} workers...")
+
+          success_count = 0
+          failure_count = 0
+
+          # This block runs the conversions in parallel
+          with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
+              future_to_file = {executor.submit(convert_one_file, txt_file): txt_file for txt_file in txt_files}
+              for future in as_completed(future_to_file):
+                  result_message = future.result()
+                  print(result_message)
+                  if "✅" in result_message:
+                      success_count += 1
+                  else:
+                      failure_count += 1
+
+          end_time = time.time()
+          print("\n--- Conversion Summary ---")
+          print(f"Successfully converted: {success_count}")
+          print(f"Failed to convert:     {failure_count}")
+          print(f"Total time taken:      {end_time - start_time:.2f} seconds")
+
+          if failure_count > 0:
+            exit(1) # Exit with an error code if any conversion failed
 
       - name: Commit and push changes
         if: github.ref == 'refs/heads/main'
@@ -34,7 +107,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          # Check if there are any staged changes in the output directory
+          # Check if there are any staged changes to commit
           if git diff --staged --quiet; then
             echo "No new DOCX files were generated. Nothing to commit."
           else
