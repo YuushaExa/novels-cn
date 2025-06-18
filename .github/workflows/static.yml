@@ -12,77 +12,21 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Use the latest version
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # Use the latest version
         with:
           python-version: '3.9'
+          # This is the key change for speed: cache pip dependencies
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install python-docx
 
       - name: Convert TXT to DOCX
-        run: |
-          import os
-          from docx import Document
-          from docx.shared import Pt
-
-          INPUT_DIR = "novel"
-          OUTPUT_DIR = "output"
-
-          os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-          def convert_txt_to_docx(txt_path, output_dir):
-              try:
-                  # Read TXT file
-                  with open(txt_path, 'r', encoding='utf-8') as f:
-                      content = f.read()
-
-                  # Create DOCX document
-                  doc = Document()
-                  
-                  # Add content with basic formatting
-                  for paragraph in content.split('\n'):
-                      if paragraph.strip():  # Skip empty lines
-                          p = doc.add_paragraph(paragraph)
-                          p.paragraph_format.space_after = Pt(6)
-                  
-                  # Save DOCX file
-                  base_name = os.path.splitext(os.path.basename(txt_path))[0]
-                  output_path = os.path.join(output_dir, f"{base_name}.docx")
-                  doc.save(output_path)
-                  return True
-              except Exception as e:
-                  print(f"Error converting {txt_path}: {e}")
-                  return False
-
-          def process_files():
-              if not os.path.exists(INPUT_DIR):
-                  print(f"Error: Input directory '{INPUT_DIR}' does not exist.")
-                  return
-
-              txt_files = [f for f in os.listdir(INPUT_DIR) if f.lower().endswith(".txt")]
-              if not txt_files:
-                  print(f"No .txt files found in '{INPUT_DIR}'.")
-                  return
-
-              print(f"Found {len(txt_files)} TXT file(s) to convert:")
-              success_count = 0
-              
-              for txt_file in txt_files:
-                  txt_path = os.path.join(INPUT_DIR, txt_file)
-                  print(f"Converting: {txt_file}")
-                  if convert_txt_to_docx(txt_path, OUTPUT_DIR):
-                      success_count += 1
-                      print(f"Successfully converted to DOCX")
-                  else:
-                      print(f"Failed to convert")
-
-              print(f"\nConversion complete. Successfully converted {success_count}/{len(txt_files)} files.")
-
-          process_files()
-        shell: python
+        # Run the dedicated, parallelized Python script
+        run: python convert.py
 
       - name: Commit and push changes
         if: github.ref == 'refs/heads/main'
@@ -90,9 +34,10 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add output/
-          if git diff --staged --quiet -- 'output/'; then
-            echo "No changes detected in output/ directory. Nothing to commit."
+          # Check if there are any staged changes in the output directory
+          if git diff --staged --quiet; then
+            echo "No new DOCX files were generated. Nothing to commit."
           else
-            git commit -m "Convert TXT files to DOCX format"
+            git commit -m "Docs: Convert TXT files to DOCX format"
             git push
           fi
