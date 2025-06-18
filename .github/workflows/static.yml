@@ -1,4 +1,4 @@
-name: Process Novel Folder
+name: Process Novel Folder to DOCX
 
 on:
   push:
@@ -20,7 +20,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install chardet
+        run: pip install chardet python-docx
 
       - name: Process novel folder
         run: |
@@ -31,6 +31,9 @@ jobs:
           import shutil
           import traceback
           from chardet import detect
+          from docx import Document
+          from docx.shared import Pt
+          from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
           NOVEL_DIR = "novel"
           OUTPUT_DIR = "output"
@@ -44,7 +47,6 @@ jobs:
           os.makedirs(OUTPUT_DIR, exist_ok=True)
 
           # --- Utility Functions (Encoding, Chinese Numerals) ---
-          # (Keep detect_encoding, read_file_with_fallback, chinese_to_arabic as is)
           def detect_encoding(file_path):
               try:
                   with open(file_path, 'rb') as f:
@@ -95,7 +97,6 @@ jobs:
 
 
           # --- parse_novel_content (Includes Sorting) ---
-          # (Keep this function exactly as it was in the previous version with the sorting logic)
           def parse_novel_content(content):
               """Parses the raw text content into metadata and chapters, then sorts chapters."""
               novel = {
@@ -162,30 +163,68 @@ jobs:
           # --- End parse_novel_content ---
 
 
-          # --- save_novel_as_single_json (Saves the provided data) ---
-          # (Keep this function exactly as it was)
-          def save_novel_as_single_json(novel_name, novel_data, output_base_dir):
-              """Save the entire novel data (metadata + chapters) as a single JSON file."""
+          # --- save_novel_as_docx ---
+          def save_novel_as_docx(novel_name, novel_data, output_base_dir):
+              """Save the entire novel as a DOCX file with formatted content."""
               sanitized_name = re.sub(r'[<>:"/\\|?*]', '_', novel_name)[:200]
-              output_file_path = os.path.join(output_base_dir, f"{sanitized_name}.json")
+              output_file_path = os.path.join(output_base_dir, f"{sanitized_name}.docx")
+              
               try:
-                  with open(output_file_path, 'w', encoding='utf-8') as f:
-                      json.dump(novel_data, f, ensure_ascii=False, indent=2)
+                  doc = Document()
+                  
+                  # Add title
+                  title = doc.add_paragraph(novel_data["metadata"]["name"])
+                  title.style = doc.styles['Title']
+                  title.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                  
+                  # Add author
+                  author = doc.add_paragraph(f"作者: {novel_data['metadata']['author']}")
+                  author.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                  
+                  # Add status
+                  status = doc.add_paragraph(f"状态: {novel_data['metadata']['status']}")
+                  status.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+                  
+                  # Add introduction
+                  doc.add_paragraph("简介:", style='Heading2')
+                  intro = doc.add_paragraph(novel_data["metadata"]["introduction"])
+                  intro.paragraph_format.space_after = Pt(12)
+                  
+                  # Add chapters
+                  for chapter in novel_data["chapters"]:
+                      # Add chapter title
+                      chap_title = f"第{chapter['chapter_number_original']}章 {chapter['chapter_title']}"
+                      doc.add_paragraph(chap_title, style='Heading1')
+                      
+                      # Add chapter content
+                      content = chapter['content']
+                      # Split content into paragraphs
+                      paragraphs = content.split('\n')
+                      for para in paragraphs:
+                          if para.strip():  # Skip empty paragraphs
+                              p = doc.add_paragraph(para)
+                              p.paragraph_format.space_after = Pt(6)
+                      
+                      # Add page break between chapters except after last chapter
+                      if chapter != novel_data["chapters"][-1]:
+                          doc.add_page_break()
+                  
+                  doc.save(output_file_path)
                   return len(novel_data.get("chapters", [])) # Return chapter count saved
               except Exception as e:
-                  print(f"Error saving JSON for novel '{novel_name}': {e}")
+                  print(f"Error saving DOCX for novel '{novel_name}': {e}")
                   raise
-          # --- End save_novel_as_single_json ---
+          # --- End save_novel_as_docx ---
 
 
           # --- unzip_and_process (Logs first 3, saves ALL) ---
           def unzip_and_process(zip_path, output_base_dir):
-              """Unzips, processes text files, logs limited details, saves ALL chapters."""
+              """Unzips, processes text files, logs limited details, saves ALL chapters as DOCX."""
               results = {}
               temp_dir = None
 
               try:
-                  # --- Extraction (remains the same) ---
+                  # --- Extraction ---
                   zip_filename = os.path.basename(zip_path)
                   temp_dir_name = os.path.splitext(zip_filename)[0]
                   temp_parent_dir = os.path.dirname(zip_path)
@@ -233,13 +272,10 @@ jobs:
                                       print("  - No chapters were found or extracted.")
                                   print(f"--- End Chapter Index Log ---")
 
-                                  # 4. *** Save FULL Data as JSON ***
-                                  #    (No truncation needed here, pass the original novel_data)
-                                  print(f"Saving parsed data for '{display_name}' as JSON...")
+                                  # 4. *** Save FULL Data as DOCX ***
+                                  print(f"Saving parsed data for '{display_name}' as DOCX...")
                                   novel_output_name = novel_name_base
-                                  # Pass the complete novel_data, which includes all chapters
-                                  saved_chapter_count = save_novel_as_single_json(novel_output_name, novel_data, output_base_dir)
-                                  # saved_chapter_count should now equal total_chapter_count if save was successful
+                                  saved_chapter_count = save_novel_as_docx(novel_output_name, novel_data, output_base_dir)
 
                                   # 5. Record Success Summary (Report total chapters found/saved)
                                   first_chap_title = all_chapters[0].get("chapter_title", "N/A") if all_chapters else "N/A"
@@ -250,14 +286,13 @@ jobs:
                                   results[file] = {
                                       "status": "success",
                                       "input_file": file,
-                                      "output_file": f"{sanitized_output_name}.json",
+                                      "output_file": f"{sanitized_output_name}.docx",
                                       "processed_novel_name": display_name,
-                                      "chapters_found_and_saved": saved_chapter_count, # Reflects count in JSON
+                                      "chapters_found_and_saved": saved_chapter_count,
                                       "first_chapter_title": first_chap_title,
-                                      "last_chapter_title_saved": last_chap_title # Title of last chapter saved
+                                      "last_chapter_title_saved": last_chap_title
                                   }
-                                  # Adjust success message to reflect all chapters saved
-                                  print(f"Successfully processed: '{file}' -> '{sanitized_output_name}.json' (Saved {saved_chapter_count} chapters)")
+                                  print(f"Successfully processed: '{file}' -> '{sanitized_output_name}.docx' (Saved {saved_chapter_count} chapters)")
 
                               # --- Error Handling ---
                               except ValueError as e: print(f"!!! Error processing file {file}: {e}"); results[file]={"status":"error","input_file":file,"error":f"File Error: {e}"}
@@ -277,7 +312,6 @@ jobs:
 
 
           # --- process_novel_folder (Main Orchestration) ---
-          # (Keep this function exactly as it was)
           def process_novel_folder():
               if not os.path.exists(NOVEL_DIR): print(f"Error: Input directory '{NOVEL_DIR}' does not exist."); return
               print(f"Starting novel processing...\nInput: '{os.path.abspath(NOVEL_DIR)}'\nOutput: '{os.path.abspath(OUTPUT_DIR)}'")
@@ -328,8 +362,7 @@ jobs:
             echo "No changes detected in output/ directory. Nothing to commit."
           else
             echo "Changes detected in output/. Committing..."
-            # Commit message reflects full chapter saving
-            git commit -m "Update processed novels (JSON with all chapters, log limited)"
+            git commit -m "Update processed novels (DOCX format)"
             echo "Pushing changes..."
             git push
           fi
