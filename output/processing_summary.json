@@ -1,13 +1,13 @@
 {
-  "598185_tw.zip": {
-    "捉妖.txt": {
+  "522013_tw.zip": {
+    "萬相之王天蠶土豆.txt": {
       "status": "success",
-      "input_file": "捉妖.txt",
-      "output_file": "捉妖.json",
-      "processed_novel_name": "捉妖",
-      "chapters_found_and_saved": 290,
-      "first_chapter_title": "姜雲",
-      "last_chapter_title_saved": "夢"
+      "input_file": "萬相之王天蠶土豆.txt",
+      "output_file": "萬相之王天蠶土豆.json",
+      "processed_novel_name": "万相之王天蚕土豆",
+      "chapters_found_and_saved": 1,
+      "first_chapter_title": "我有三個相宮",
+      "last_chapter_title_saved": "我有三個相宮"
     }
   }
 }
