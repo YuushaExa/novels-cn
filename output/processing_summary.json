@@ -1,9 +1,13 @@
 {
   "522013_tw.zip": {
     "萬相之王天蠶土豆.txt": {
-      "status": "error",
+      "status": "success",
       "input_file": "萬相之王天蠶土豆.txt",
-      "error": "File Error: All strings must be XML compatible: Unicode or ASCII, no NULL bytes or control characters"
+      "output_file": "萬相之王天蠶土豆.docx",
+      "processed_novel_name": "万相之王天蚕土豆",
+      "chapters_found_and_saved": 1,
+      "first_chapter_title": "我有三個相宮",
+      "last_chapter_title_saved": "我有三個相宮"
     }
   }
 }
